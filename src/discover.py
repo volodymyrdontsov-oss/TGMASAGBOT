@@ -58,6 +58,7 @@ async def main(depth: int) -> None:
             [
                 {"text": "/start"},
                 {"share_phone": True},
+                {"click_first_button": True},
                 {"button_text": "Example Button Label"},
             ],
             indent=2,
@@ -65,9 +66,10 @@ async def main(depth: int) -> None:
     )
     print(
         "\nStep types:\n"
-        '  {"text": "/start"}        — send a text message\n'
-        '  {"share_phone": true}     — share your phone number with the bot\n'
-        '  {"button_text": "Label"}  — click button matching this label\n'
+        '  {"text": "/start"}           — send a text message\n'
+        '  {"share_phone": true}        — share your phone number with the bot\n'
+        '  {"click_first_button": true}  — click the first button (for confirmations)\n'
+        '  {"button_text": "Label"}     — click button matching this label\n'
     )
 
 

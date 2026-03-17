@@ -258,12 +258,13 @@ Based on what you saw in Step 6, create a file that tells the monitor which butt
 nano flow_config.json
 ```
 
-Type in the button sequence. For example, if the discovery showed that you first send `/start`, then the bot asks to share your phone number, then you press "Book a massage", then press "Anna":
+Type in the button sequence. For example, if the discovery showed that you first send `/start`, then the bot asks to share your phone number, then it asks you to confirm your identity, then you press "Book a massage", then press "Anna":
 
 ```json
 [
     {"text": "/start"},
     {"share_phone": true},
+    {"click_first_button": true},
     {"button_text": "Book a massage"},
     {"button_text": "Anna"}
 ]
@@ -275,6 +276,7 @@ Type in the button sequence. For example, if the discovery showed that you first
 - Each step is inside `{ }`, separated by commas
 - `{"text": "/start"}` means "send this text to the bot"
 - `{"share_phone": true}` means "share your phone number with the bot" (used when the bot shows a "Share phone number" / "Send contact" button for authentication)
+- `{"click_first_button": true}` means "click whatever button the bot shows" (used for confirmation prompts like "Is this you?" where you always want to say yes)
 - `{"button_text": "Book a massage"}` means "click the button whose label contains this text"
 - Button matching is case-insensitive (`"anna"` matches "Anna")
 - Use the exact button labels from the discovery output

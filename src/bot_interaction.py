@@ -258,6 +258,28 @@ async def check_slots(
     for step in button_sequence:
         if step.get("share_phone"):
             last_msg = await _send_phone_contact(client, bot)
+        elif step.get("click_first_button") and last_msg is not None:
+            bm = BotMessage.from_message(last_msg)
+            clicked = False
+            for row in bm.buttons:
+                for btn in row:
+                    if btn.get("request_phone"):
+                        continue
+                    label = btn["text"]
+                    log.info("Auto-clicking first button: [%s]", label)
+                    if btn["data"] is not None:
+                        last_msg = await _send_and_wait(
+                            client, bot, click_msg=last_msg, button_data=btn["data"]
+                        )
+                    else:
+                        last_msg = await _send_and_wait(client, bot, text=label)
+                    clicked = True
+                    break
+                if clicked:
+                    break
+            if not clicked:
+                log.warning("No buttons found to click in current message")
+                return []
         elif "text" in step:
             last_msg = await _send_and_wait(client, bot, text=step["text"])
         elif "button_text" in step and last_msg is not None:
@@ -267,9 +289,12 @@ async def check_slots(
             for row in bm.buttons:
                 for btn in row:
                     if target_label in btn["text"].lower():
-                        last_msg = await _send_and_wait(
-                            client, bot, click_msg=last_msg, button_data=btn["data"]
-                        )
+                        if btn["data"] is not None:
+                            last_msg = await _send_and_wait(
+                                client, bot, click_msg=last_msg, button_data=btn["data"]
+                            )
+                        else:
+                            last_msg = await _send_and_wait(client, bot, text=btn["text"])
                         clicked = True
                         break
                 if clicked:
