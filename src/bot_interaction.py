@@ -199,10 +199,13 @@ async def _explore_buttons(
         for col_idx, btn in enumerate(row):
             label = btn["text"]
             data = btn["data"]
+            is_phone = btn.get("request_phone", False)
             indent = "  " * current_depth
-            log.info("%s-> Pressing button [%s] (data=%s)", indent, label, data)
+            log.info("%s-> Pressing button [%s] (data=%s%s)", indent, label, data, " [SHARE PHONE]" if is_phone else "")
 
-            if data is not None:
+            if is_phone:
+                resp = await _send_phone_contact(client, bot_entity)
+            elif data is not None:
                 resp = await _send_and_wait(client, bot_entity, click_msg=parent_msg, button_data=data)
             else:
                 resp = await _send_and_wait(client, bot_entity, text=label)
