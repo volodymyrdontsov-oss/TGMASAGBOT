@@ -30,7 +30,7 @@ from telethon.tl.types import (
     ReplyKeyboardMarkup,
 )
 
-from src.config import MASSAGE_BOT_USERNAME, SPECIALIST_NAME
+from src.config import MASSAGE_BOT_USERNAME, NO_SLOTS_TEXT, SPECIALIST_NAME
 
 log = logging.getLogger(__name__)
 
@@ -391,42 +391,47 @@ async def check_slots(
 
 
 def _parse_slots(msg: Message, specialist_filter: str) -> list[SlotInfo]:
-    """Extract available slot information from the bot's response message.
+    """Check the bot's response for available slots.
 
-    This is a heuristic parser – it looks for the specialist name in either
-    the message text or the button labels and extracts time information.
-    Adjust the parsing logic once the bot's actual response format is known.
+    If the response contains NO_SLOTS_TEXT (e.g. "Немає вільних слотів"),
+    there are no available slots.  Any other response means slots are
+    available — return a SlotInfo with the full response text and any
+    buttons the bot shows (likely dates/times to book).
     """
-    slots: list[SlotInfo] = []
     text = msg.text or msg.message or ""
+    no_slots_indicator = NO_SLOTS_TEXT.lower()
+
+    if no_slots_indicator in text.lower():
+        log.info("Bot says no slots available: %s", text[:150])
+        return []
+
+    log.info("Slots appear to be available! Response: %s", text[:300])
 
     bm = BotMessage.from_message(msg)
 
+    slots: list[SlotInfo] = []
     for row in bm.buttons:
         for btn in row:
-            label = btn["text"].lower()
-            if specialist_filter in label or specialist_filter in text.lower():
-                slots.append(
-                    SlotInfo(
-                        specialist=SPECIALIST_NAME,
-                        date="",
-                        time=btn["text"],
-                        raw_text=text,
-                        button_data=btn["data"],
-                    )
+            if btn["text"] == "« Назад":
+                continue
+            slots.append(
+                SlotInfo(
+                    specialist=SPECIALIST_NAME,
+                    date="",
+                    time=btn["text"],
+                    raw_text=text,
+                    button_data=btn["data"],
                 )
+            )
 
-    if not slots and specialist_filter in text.lower():
-        for line in text.splitlines():
-            stripped = line.strip()
-            if any(ch.isdigit() for ch in stripped) and (":" in stripped or "-" in stripped):
-                slots.append(
-                    SlotInfo(
-                        specialist=SPECIALIST_NAME,
-                        date="",
-                        time=stripped,
-                        raw_text=text,
-                    )
-                )
+    if not slots:
+        slots.append(
+            SlotInfo(
+                specialist=SPECIALIST_NAME,
+                date="",
+                time="",
+                raw_text=text,
+            )
+        )
 
     return slots

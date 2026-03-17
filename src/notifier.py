@@ -23,17 +23,22 @@ log = logging.getLogger(__name__)
 
 def _format_slots(slots: list[SlotInfo]) -> str:
     lines = [
-        "🔔 *Available massage slots found!*\n",
+        "🔔 Available massage slots found!\n",
+        f"Specialist: {slots[0].specialist}\n",
     ]
-    for s in slots:
-        parts = [f"• *{s.specialist}*"]
-        if s.date:
-            parts.append(f"  📅 {s.date}")
-        if s.time:
-            parts.append(f"  🕐 {s.time}")
-        lines.append("\n".join(parts))
-    lines.append("\nOpen @GenesisMassagesBot to book now!")
-    return "\n\n".join(lines)
+
+    time_entries = [s.time for s in slots if s.time]
+    if time_entries:
+        lines.append("Available slots:")
+        for t in time_entries:
+            lines.append(f"  • {t}")
+        lines.append("")
+
+    if slots[0].raw_text:
+        lines.append(f"Bot response:\n{slots[0].raw_text}\n")
+
+    lines.append("👉 Open @GenesisMassagesBot to book now!")
+    return "\n".join(lines)
 
 
 async def notify_via_saved_messages(client: TelegramClient, slots: list[SlotInfo]) -> None:

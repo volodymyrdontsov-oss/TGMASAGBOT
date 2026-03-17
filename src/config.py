@@ -23,5 +23,7 @@ CHECK_INTERVAL: int = int(os.getenv("CHECK_INTERVAL", "60"))
 MASSAGE_BOT_USERNAME: str = os.getenv("MASSAGE_BOT_USERNAME", "GenesisMassagesBot")
 SESSION_NAME: str = os.getenv("SESSION_NAME", "massage_monitor_session")
 
+NO_SLOTS_TEXT: str = os.getenv("NO_SLOTS_TEXT", "Немає вільних слотів").strip()
+
 NOTIFY_BOT_TOKEN: str = os.getenv("NOTIFY_BOT_TOKEN", "").strip()
 NOTIFY_CHAT_ID: str = os.getenv("NOTIFY_CHAT_ID", "").strip()
