@@ -123,6 +123,81 @@ async def _send_phone_contact(client: TelegramClient, bot_entity) -> Message | N
     return last_msg
 
 
+async def _wait_for_buttons(
+    client: TelegramClient,
+    bot_entity,
+    timeout: int = RESPONSE_TIMEOUT,
+) -> Message | None:
+    """Wait until the bot sends a message that has buttons (inline or keyboard).
+
+    Useful after steps like share_phone where the bot may send a plain text
+    acknowledgement first, then a separate message with confirmation buttons.
+    """
+    deadline = time.monotonic() + timeout
+    seen_ids: set[int] = set()
+
+    while time.monotonic() < deadline:
+        msgs = await client.get_messages(bot_entity, limit=3)
+        for msg in msgs:
+            if msg.out or msg.id in seen_ids:
+                continue
+            seen_ids.add(msg.id)
+            if msg.reply_markup:
+                log.info("Found message with buttons: %s", (msg.text or "")[:100])
+                return msg
+        await asyncio.sleep(1)
+
+    return None
+
+
+async def _click_first_available_button(
+    client: TelegramClient,
+    bot_entity,
+    last_msg: Message | None,
+) -> Message | None:
+    """Find and click the first non-phone-request button.
+
+    If *last_msg* has no buttons, waits for the bot to send a new message
+    that does have buttons (the bot may send multiple messages in sequence,
+    e.g. acknowledgement first, then confirmation with buttons).
+    """
+    msg = last_msg
+    if msg is not None:
+        bm = BotMessage.from_message(msg)
+        has_clickable = any(
+            not btn.get("request_phone")
+            for row in bm.buttons
+            for btn in row
+        )
+        if not has_clickable:
+            log.info("Current message has no clickable buttons, waiting for next message...")
+            msg = await _wait_for_buttons(client, bot_entity, timeout=RESPONSE_TIMEOUT)
+    else:
+        log.info("No current message, waiting for a message with buttons...")
+        msg = await _wait_for_buttons(client, bot_entity, timeout=RESPONSE_TIMEOUT)
+
+    if msg is None:
+        log.warning("No message with buttons found after waiting")
+        return None
+
+    bm = BotMessage.from_message(msg)
+    for row in bm.buttons:
+        for btn in row:
+            if btn.get("request_phone"):
+                continue
+            label = btn["text"]
+            log.info("Auto-clicking button: [%s]", label)
+            if btn["data"] is not None:
+                return await _send_and_wait(
+                    client, bot_entity, click_msg=msg, button_data=btn["data"]
+                )
+            else:
+                return await _send_and_wait(client, bot_entity, text=label)
+
+    log.warning("No clickable buttons found in message")
+    return None
+
+
 async def _send_and_wait(
     client: TelegramClient,
     bot_entity,
@@ -171,25 +246,8 @@ async def run_auth_steps(
     for step in auth_steps:
         if step.get("share_phone"):
             last_msg = await _send_phone_contact(client, bot)
-        elif step.get("click_first_button") and last_msg is not None:
-            bm = BotMessage.from_message(last_msg)
-            clicked = False
-            for row in bm.buttons:
-                for btn in row:
-                    if btn.get("request_phone"):
-                        continue
-                    label = btn["text"]
-                    log.info("Auth: auto-clicking [%s]", label)
-                    if btn["data"] is not None:
-                        last_msg = await _send_and_wait(
-                            client, bot, click_msg=last_msg, button_data=btn["data"]
-                        )
-                    else:
-                        last_msg = await _send_and_wait(client, bot, text=label)
-                    clicked = True
-                    break
-                if clicked:
-                    break
+        elif step.get("click_first_button"):
+            last_msg = await _click_first_available_button(client, bot, last_msg)
         elif "text" in step:
             last_msg = await _send_and_wait(client, bot, text=step["text"])
         elif "button_text" in step and last_msg is not None:
@@ -334,27 +392,10 @@ async def check_slots(
     for step in button_sequence:
         if step.get("share_phone"):
             last_msg = await _send_phone_contact(client, bot)
-        elif step.get("click_first_button") and last_msg is not None:
-            bm = BotMessage.from_message(last_msg)
-            clicked = False
-            for row in bm.buttons:
-                for btn in row:
-                    if btn.get("request_phone"):
-                        continue
-                    label = btn["text"]
-                    log.info("Auto-clicking first button: [%s]", label)
-                    if btn["data"] is not None:
-                        last_msg = await _send_and_wait(
-                            client, bot, click_msg=last_msg, button_data=btn["data"]
-                        )
-                    else:
-                        last_msg = await _send_and_wait(client, bot, text=label)
-                    clicked = True
-                    break
-                if clicked:
-                    break
-            if not clicked:
-                log.warning("No buttons found to click in current message")
+        elif step.get("click_first_button"):
+            last_msg = await _click_first_available_button(client, bot, last_msg)
+            if last_msg is None:
+                log.warning("click_first_button failed — no buttons found")
                 return []
         elif "text" in step:
             last_msg = await _send_and_wait(client, bot, text=step["text"])
