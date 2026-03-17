@@ -1,0 +1,15 @@
+[Unit]
+Description=Massage Slot Monitor Bot
+After=network.target
+
+[Service]
+Type=simple
+User=monitor
+WorkingDirectory=/home/monitor/TGMASAGBOT
+ExecStart=/usr/bin/python3 -m src
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/monitor/TGMASAGBOT/.env
+
+[Install]
+WantedBy=multi-user.target
