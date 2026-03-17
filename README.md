@@ -227,15 +227,18 @@ python3 -m src.discover --depth 2
 
 **What will happen:**
 
-1. It asks for your **phone number** — type it with country code (e.g. `+380501234567`) and press Enter
+1. If this is your first run, it asks for your **phone number** — type it with country code (e.g. `+380501234567`) and press Enter
 2. Telegram sends a **login code** to your Telegram app — type it and press Enter
 3. If you have **2FA** set up, type your password and press Enter
-4. The tool walks through the bot's menus and prints everything it finds
+4. The tool automatically handles authentication with the massage bot: sends `/start`, shares your phone number, and confirms your identity
+5. After authentication, it explores the bot's menus and prints everything it finds
 
 **The output will look something like this** (yours will be different):
 
 ```
-=== Starting bot flow discovery (depth=2) ===
+=== Running 3 auth step(s) before discovery ===
+Auth: auto-clicking [Confirm]
+=== Auth complete. Starting discovery (depth=2) ===
 BOT TEXT: Welcome! Choose an option:
   row 0: [ Book a massage | My bookings ]
   row 1: [ About us ]
@@ -248,7 +251,7 @@ BOT TEXT: Choose a specialist:
 
 **Read the output carefully** — you need the exact button names for the next step.
 
-> After this first login, a session file is saved. You won't need to enter your phone/code again.
+> After the first Telegram login, a session file is saved. You won't need to enter your phone/code again.
 
 ### Step 7: Create the Button Sequence File
 

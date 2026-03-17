@@ -156,21 +156,90 @@ async def _send_and_wait(
     return last_msg
 
 
-async def discover_flow(client: TelegramClient, depth: int = 3) -> list[BotMessage]:
+async def run_auth_steps(
+    client: TelegramClient,
+    auth_steps: list[dict],
+) -> Message | None:
+    """Execute authentication steps and return the bot's final response.
+
+    Uses the same step format as check_slots: text, share_phone,
+    click_first_button, button_text.
+    """
+    bot = await client.get_entity(MASSAGE_BOT_USERNAME)
+    last_msg: Message | None = None
+
+    for step in auth_steps:
+        if step.get("share_phone"):
+            last_msg = await _send_phone_contact(client, bot)
+        elif step.get("click_first_button") and last_msg is not None:
+            bm = BotMessage.from_message(last_msg)
+            clicked = False
+            for row in bm.buttons:
+                for btn in row:
+                    if btn.get("request_phone"):
+                        continue
+                    label = btn["text"]
+                    log.info("Auth: auto-clicking [%s]", label)
+                    if btn["data"] is not None:
+                        last_msg = await _send_and_wait(
+                            client, bot, click_msg=last_msg, button_data=btn["data"]
+                        )
+                    else:
+                        last_msg = await _send_and_wait(client, bot, text=label)
+                    clicked = True
+                    break
+                if clicked:
+                    break
+        elif "text" in step:
+            last_msg = await _send_and_wait(client, bot, text=step["text"])
+        elif "button_text" in step and last_msg is not None:
+            target_label = step["button_text"].lower()
+            bm = BotMessage.from_message(last_msg)
+            for row in bm.buttons:
+                for btn in row:
+                    if target_label in btn["text"].lower():
+                        if btn["data"] is not None:
+                            last_msg = await _send_and_wait(
+                                client, bot, click_msg=last_msg, button_data=btn["data"]
+                            )
+                        else:
+                            last_msg = await _send_and_wait(client, bot, text=btn["text"])
+                        break
+
+        if last_msg is None:
+            log.warning("Lost bot response during auth step: %s", step)
+            return None
+
+    return last_msg
+
+
+async def discover_flow(
+    client: TelegramClient,
+    depth: int = 3,
+    auth_steps: list[dict] | None = None,
+) -> list[BotMessage]:
     """Walk the bot's menu tree up to *depth* levels, returning every response.
 
-    This is meant to be run once interactively so you can see the full menu
-    structure and decide which button sequence leads to the specialist list.
+    If *auth_steps* is provided, those steps are executed first (e.g. /start,
+    share phone, confirm identity) and discovery begins from the post-auth
+    menu. Otherwise, discovery starts from /start.
     """
     bot = await client.get_entity(MASSAGE_BOT_USERNAME)
     collected: list[BotMessage] = []
 
-    log.info("=== Starting bot flow discovery (depth=%d) ===", depth)
-
-    response = await _send_and_wait(client, bot, text="/start")
-    if response is None:
-        log.warning("No response to /start")
-        return collected
+    if auth_steps:
+        log.info("=== Running %d auth step(s) before discovery ===", len(auth_steps))
+        response = await run_auth_steps(client, auth_steps)
+        if response is None:
+            log.warning("Auth steps failed, no response from bot")
+            return collected
+        log.info("=== Auth complete. Starting discovery (depth=%d) ===", depth)
+    else:
+        log.info("=== Starting bot flow discovery (depth=%d) ===", depth)
+        response = await _send_and_wait(client, bot, text="/start")
+        if response is None:
+            log.warning("No response to /start")
+            return collected
 
     bm = BotMessage.from_message(response)
     collected.append(bm)
@@ -201,14 +270,21 @@ async def _explore_buttons(
             data = btn["data"]
             is_phone = btn.get("request_phone", False)
             indent = "  " * current_depth
-            log.info("%s-> Pressing button [%s] (data=%s%s)", indent, label, data, " [SHARE PHONE]" if is_phone else "")
 
             if is_phone:
-                resp = await _send_phone_contact(client, bot_entity)
-            elif data is not None:
-                resp = await _send_and_wait(client, bot_entity, click_msg=parent_msg, button_data=data)
-            else:
-                resp = await _send_and_wait(client, bot_entity, text=label)
+                log.info("%s   [SHARE PHONE button — skipping during discovery]", indent)
+                continue
+
+            log.info("%s-> Pressing button [%s] (data=%s)", indent, label, data)
+
+            try:
+                if data is not None:
+                    resp = await _send_and_wait(client, bot_entity, click_msg=parent_msg, button_data=data)
+                else:
+                    resp = await _send_and_wait(client, bot_entity, text=label)
+            except Exception as e:
+                log.warning("%s   Error clicking button [%s]: %s", indent, label, e)
+                continue
 
             if resp is None:
                 log.info("%s   (no response)", indent)
