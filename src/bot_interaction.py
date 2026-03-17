@@ -34,7 +34,8 @@ from src.config import MASSAGE_BOT_USERNAME, NO_SLOTS_TEXT, SPECIALIST_NAME
 
 log = logging.getLogger(__name__)
 
-RESPONSE_TIMEOUT = 20
+RESPONSE_TIMEOUT = 15
+POLL_INTERVAL = 0.4
 
 
 @dataclass
@@ -89,26 +90,44 @@ class BotMessage:
 # Low-level helpers with proper message-ID tracking
 # ---------------------------------------------------------------------------
 
-async def _get_baseline_id(client: TelegramClient, bot_entity) -> int:
-    """Return the ID of the most recent message in the chat, or 0."""
+async def _get_baseline(client: TelegramClient, bot_entity) -> tuple[int, str]:
+    """Return (id, text) of the most recent message in the chat."""
     msgs = await client.get_messages(bot_entity, limit=1)
-    return msgs[0].id if msgs else 0
+    if msgs:
+        return msgs[0].id, (msgs[0].text or msgs[0].message or "")
+    return 0, ""
 
 
-async def _wait_for_response(
+async def _wait_for_change(
     client: TelegramClient,
     bot_entity,
-    after_id: int,
+    baseline_id: int,
+    baseline_text: str,
+    watched_msg_id: int | None = None,
     timeout: int = RESPONSE_TIMEOUT,
 ) -> Message | None:
-    """Wait for a new non-outgoing message with id > after_id."""
+    """Wait for either a NEW message (id > baseline_id) or an EDIT to an
+    existing message (watched_msg_id with changed text).
+
+    This solves the core timing problem: inline button clicks typically
+    edit the same message, while text commands and phone sharing create
+    new messages. This function handles both cases simultaneously.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         msgs = await client.get_messages(bot_entity, limit=5)
         for msg in msgs:
-            if not msg.out and msg.id > after_id:
+            if not msg.out and msg.id > baseline_id:
                 return msg
-        await asyncio.sleep(1)
+
+        if watched_msg_id is not None:
+            refreshed = await client.get_messages(bot_entity, ids=watched_msg_id)
+            if refreshed:
+                current_text = refreshed.text or refreshed.message or ""
+                if current_text != baseline_text:
+                    return refreshed
+
+        await asyncio.sleep(POLL_INTERVAL)
     return None
 
 
@@ -125,7 +144,7 @@ async def _wait_for_button_message(
         for msg in msgs:
             if not msg.out and msg.id > after_id and msg.reply_markup:
                 return msg
-        await asyncio.sleep(1)
+        await asyncio.sleep(POLL_INTERVAL)
     return None
 
 
@@ -135,10 +154,14 @@ async def _send_text_and_wait(
     text: str,
 ) -> Message | None:
     """Send a text message and wait for the bot's response."""
-    baseline = await _get_baseline_id(client, bot_entity)
+    baseline_id, baseline_text = await _get_baseline(client, bot_entity)
     await client.send_message(bot_entity, text)
-    await asyncio.sleep(1.5)
-    return await _wait_for_response(client, bot_entity, after_id=baseline)
+    await asyncio.sleep(0.5)
+    return await _wait_for_change(
+        client, bot_entity,
+        baseline_id=baseline_id,
+        baseline_text=baseline_text,
+    )
 
 
 async def _click_button_and_wait(
@@ -147,18 +170,21 @@ async def _click_button_and_wait(
     msg: Message,
     button_data: bytes,
 ) -> Message | None:
-    """Click an inline callback button and wait for the bot's response."""
-    baseline = await _get_baseline_id(client, bot_entity)
+    """Click an inline callback button and wait for the bot's response.
+
+    Checks for both a new message AND an edit to the clicked message,
+    whichever comes first.
+    """
+    baseline_id, _ = await _get_baseline(client, bot_entity)
+    original_text = msg.text or msg.message or ""
     await msg.click(data=button_data)
-    await asyncio.sleep(1.5)
-    resp = await _wait_for_response(client, bot_entity, after_id=baseline)
-    if resp is None:
-        # The bot might have edited the same message instead of sending a new one;
-        # re-fetch the clicked message to get the updated version.
-        refreshed = await client.get_messages(bot_entity, ids=msg.id)
-        if refreshed and refreshed.text != (msg.text or msg.message or ""):
-            return refreshed
-    return resp
+    await asyncio.sleep(0.5)
+    return await _wait_for_change(
+        client, bot_entity,
+        baseline_id=baseline_id,
+        baseline_text=original_text,
+        watched_msg_id=msg.id,
+    )
 
 
 async def _send_phone_contact(client: TelegramClient, bot_entity) -> Message | None:
@@ -174,7 +200,7 @@ async def _send_phone_contact(client: TelegramClient, bot_entity) -> Message | N
 
     log.info("Sharing phone number %s with bot", phone[:4] + "****")
 
-    baseline = await _get_baseline_id(client, bot_entity)
+    baseline_id, baseline_text = await _get_baseline(client, bot_entity)
 
     await client.send_file(
         bot_entity,
@@ -186,8 +212,12 @@ async def _send_phone_contact(client: TelegramClient, bot_entity) -> Message | N
         ),
     )
 
-    await asyncio.sleep(2)
-    return await _wait_for_response(client, bot_entity, after_id=baseline)
+    await asyncio.sleep(1)
+    return await _wait_for_change(
+        client, bot_entity,
+        baseline_id=baseline_id,
+        baseline_text=baseline_text,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +343,7 @@ async def _do_click_button_by_text(
                     return await _click_button_and_wait(client, bot_entity, found_msg, btn["data"])
                 else:
                     return await _send_text_and_wait(client, bot_entity, btn["text"])
-        await asyncio.sleep(1)
+        await asyncio.sleep(POLL_INTERVAL)
 
     log.warning("Button '%s' not found after waiting", target_label)
     return None
