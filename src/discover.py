@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 DEFAULT_AUTH_STEPS = [
     {"text": "/start"},
     {"share_phone": True},
-    {"click_first_button": True},
+    {"button_text": "Так"},
 ]
 
 
