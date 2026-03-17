@@ -22,9 +22,12 @@ from dataclasses import dataclass, field
 from telethon import TelegramClient
 from telethon.tl.custom import Message
 from telethon.tl.types import (
+    InputMediaContact,
     KeyboardButtonCallback,
+    KeyboardButtonRequestPhone,
     KeyboardButtonRow,
     ReplyInlineMarkup,
+    ReplyKeyboardMarkup,
 )
 
 from src.config import MASSAGE_BOT_USERNAME, SPECIALIST_NAME
@@ -54,18 +57,70 @@ class BotMessage:
     def from_message(cls, msg: Message) -> "BotMessage":
         text = msg.text or msg.message or ""
         buttons: list[list[dict]] = []
-        if msg.reply_markup and isinstance(msg.reply_markup, ReplyInlineMarkup):
-            for row in msg.reply_markup.rows:
+        markup = msg.reply_markup
+        if markup and isinstance(markup, ReplyInlineMarkup):
+            for row in markup.rows:
                 btn_row = []
                 for btn in row.buttons:
                     btn_row.append(
                         {
                             "text": btn.text,
                             "data": btn.data if isinstance(btn, KeyboardButtonCallback) else None,
+                            "request_phone": isinstance(btn, KeyboardButtonRequestPhone),
+                        }
+                    )
+                buttons.append(btn_row)
+        elif markup and isinstance(markup, ReplyKeyboardMarkup):
+            for row in markup.rows:
+                btn_row = []
+                for btn in row.buttons:
+                    btn_row.append(
+                        {
+                            "text": btn.text,
+                            "data": None,
+                            "request_phone": isinstance(btn, KeyboardButtonRequestPhone),
                         }
                     )
                 buttons.append(btn_row)
         return cls(text=text, buttons=buttons)
+
+
+async def _send_phone_contact(client: TelegramClient, bot_entity) -> Message | None:
+    """Share the logged-in user's phone number as a contact with the bot."""
+    me = await client.get_me()
+    phone = me.phone
+    if not phone:
+        log.error("Cannot share phone: the logged-in account has no phone number")
+        return None
+
+    if not phone.startswith("+"):
+        phone = "+" + phone
+
+    log.info("Sharing phone number %s with bot", phone[:4] + "****")
+
+    await client.send_file(
+        bot_entity,
+        InputMediaContact(
+            phone_number=phone,
+            first_name=me.first_name or "",
+            last_name=me.last_name or "",
+            vcard="",
+        ),
+    )
+
+    await asyncio.sleep(2)
+
+    deadline = time.monotonic() + RESPONSE_TIMEOUT
+    last_msg = None
+    while time.monotonic() < deadline:
+        msgs = await client.get_messages(bot_entity, limit=1)
+        if msgs:
+            last_msg = msgs[0]
+            if not last_msg.out:
+                break
+        await asyncio.sleep(1)
+
+    return last_msg
 
 
 async def _send_and_wait(
@@ -172,7 +227,11 @@ def _log_bot_message(bm: BotMessage, level: int = 0) -> None:
     indent = "  " * level
     log.info("%sBOT TEXT: %s", indent, bm.text[:200] if bm.text else "(empty)")
     for ri, row in enumerate(bm.buttons):
-        btns = " | ".join(b["text"] for b in row)
+        labels = []
+        for b in row:
+            tag = " [SHARE PHONE]" if b.get("request_phone") else ""
+            labels.append(b["text"] + tag)
+        btns = " | ".join(labels)
         log.info("%s  row %d: [ %s ]", indent, ri, btns)
 
 
@@ -194,7 +253,9 @@ async def check_slots(
     last_msg: Message | None = None
 
     for step in button_sequence:
-        if "text" in step:
+        if step.get("share_phone"):
+            last_msg = await _send_phone_contact(client, bot)
+        elif "text" in step:
             last_msg = await _send_and_wait(client, bot, text=step["text"])
         elif "button_text" in step and last_msg is not None:
             target_label = step["button_text"].lower()

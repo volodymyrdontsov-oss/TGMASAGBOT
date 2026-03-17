@@ -45,7 +45,8 @@ async def main(depth: int) -> None:
             for ri, row in enumerate(bm.buttons):
                 for ci, btn in enumerate(row):
                     data_repr = btn["data"].hex() if btn["data"] else "None"
-                    print(f"  [{ri},{ci}] \"{btn['text']}\"  data={data_repr}")
+                    phone_tag = "  [SHARE PHONE]" if btn.get("request_phone") else ""
+                    print(f"  [{ri},{ci}] \"{btn['text']}\"  data={data_repr}{phone_tag}")
     print("\n" + "=" * 60)
 
     print(
@@ -56,10 +57,17 @@ async def main(depth: int) -> None:
         json.dumps(
             [
                 {"text": "/start"},
+                {"share_phone": True},
                 {"button_text": "Example Button Label"},
             ],
             indent=2,
         )
+    )
+    print(
+        "\nStep types:\n"
+        '  {"text": "/start"}        — send a text message\n'
+        '  {"share_phone": true}     — share your phone number with the bot\n'
+        '  {"button_text": "Label"}  — click button matching this label\n'
     )
 
 
