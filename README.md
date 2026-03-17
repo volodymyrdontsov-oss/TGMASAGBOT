@@ -116,6 +116,35 @@ For example: `ssh root@168.119.42.100`
 
 **You are now connected to the server.** Everything you type from now on runs on the server, not on your computer. You'll see something like `root@ubuntu:~#`.
 
+**Troubleshooting: "Connection refused" error**
+
+If you see `connect to host ... port 22: Connection refused`, try these fixes in order:
+
+1. **Wait 1-2 minutes and try again.** A brand-new server needs time to boot. The SSH service doesn't start instantly — especially on the first boot when Ubuntu runs initial setup. Just wait and re-run the `ssh` command.
+
+2. **Check the server is running.** Go to [console.hetzner.cloud](https://console.hetzner.cloud), click your project, and look at your server. It should show a green dot and say **"Running"**. If it says "Off", click the power button to start it.
+
+3. **Check for a Hetzner Firewall blocking SSH.** In the Hetzner console, click your server, then look for a **"Firewalls"** tab. If a firewall is attached and it doesn't have a rule allowing **TCP port 22** inbound, SSH is blocked. Fix it by adding a rule: Protocol `TCP`, Port `22`, Source `0.0.0.0/0` — or just detach the firewall entirely.
+
+4. **Double-check the IP address.** Click your server in the Hetzner console and verify the **IPv4** address matches what you typed. Don't use the IPv6 address (the longer one with colons).
+
+5. **Use the Hetzner web console as a fallback.** Click your server, then click the **">_ Console"** button (top-right area). This opens a terminal in your browser — no SSH needed. Inside it, run:
+
+```
+systemctl status ssh
+```
+
+If it says "inactive" or "dead", start it:
+
+```
+systemctl start ssh
+systemctl enable ssh
+```
+
+Then try connecting via SSH from PowerShell again.
+
+6. **Last resort: rebuild the server.** In the Hetzner console, go to your server > **"Rebuild"** > select **Ubuntu 24.04** > Rebuild. Wait 2 minutes, then try SSH again.
+
 ### Step 4: Set Up the Server
 
 Now run these commands one at a time on the server. Copy each line, paste it into the terminal, and press Enter.
@@ -538,6 +567,10 @@ If on a server, restart: `systemctl restart massage-monitor`
 ---
 
 ## Frequently Asked Questions
+
+### "I get 'Connection refused' when trying to SSH into my server"
+
+This is very common with brand-new servers. The server needs 1-2 minutes to fully boot before SSH is ready. Wait and try again. If it still doesn't work, check the detailed troubleshooting steps in Part 2A, Step 3.
 
 ### "Is this safe? Can I get banned?"
 
