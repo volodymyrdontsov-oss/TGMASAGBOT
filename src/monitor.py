@@ -8,10 +8,12 @@ import logging
 import os
 
 from telethon import TelegramClient
+from telethon.errors import FloodWaitError
 
 from src.bot_interaction import check_slots, SlotInfo
-from src.config import CHECK_INTERVAL, SPECIALIST_NAME
+from src.config import CHECK_INTERVAL, ITERATION_TIMEOUT, SPECIALIST_NAME
 from src.notifier import send_notification
+from src.watchdog import alive as watchdog_alive
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +69,10 @@ async def run_monitor(client: TelegramClient) -> None:
 
     while True:
         try:
-            slots = await check_slots(client, button_sequence)
+            slots = await asyncio.wait_for(
+                check_slots(client, button_sequence),
+                timeout=ITERATION_TIMEOUT,
+            )
 
             new_slots = [s for s in slots if _slot_key(s) not in _already_notified]
 
@@ -79,7 +84,36 @@ async def run_monitor(client: TelegramClient) -> None:
             else:
                 log.info("No new slots found. Will check again in %ds.", CHECK_INTERVAL)
 
+        except asyncio.TimeoutError:
+            # Iteration exceeded ITERATION_TIMEOUT — almost always a hung
+            # Telethon network call. Drop this iteration and try again next
+            # tick; the in-flight task is cancelled by `wait_for`.
+            log.warning(
+                "Slot check exceeded %ds and was aborted. Will retry next tick.",
+                ITERATION_TIMEOUT,
+            )
+
+        except FloodWaitError as e:
+            # Telegram has rate-limited us. Sleep for *exactly* the requested
+            # duration (plus a small buffer) instead of pounding the API
+            # every CHECK_INTERVAL seconds while still in the wait window.
+            wait = int(e.seconds) + 5
+            log.warning(
+                "Telegram FloodWait: must wait %ds before retrying", wait,
+            )
+            # Pet the watchdog in chunks so a multi-minute FloodWait doesn't
+            # trip the systemd WatchdogSec timer — we are healthy, just
+            # rate-limited.
+            remaining = wait
+            while remaining > 0:
+                watchdog_alive()
+                chunk = min(remaining, 60)
+                await asyncio.sleep(chunk)
+                remaining -= chunk
+            continue  # skip the trailing sleep below — we already waited
+
         except Exception:
             log.exception("Error during slot check")
 
+        watchdog_alive()
         await asyncio.sleep(CHECK_INTERVAL)
