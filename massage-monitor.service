@@ -3,7 +3,16 @@ Description=Massage Slot Monitor Bot
 After=network.target
 
 [Service]
-Type=simple
+# Type=notify lets the bot tell systemd when it's ready (after Telethon
+# auth) and pet the watchdog each iteration. If sdnotify isn't installed
+# the bot still runs, but startup will be marked failed; in that case
+# either install sdnotify or revert to Type=simple.
+Type=notify
+NotifyAccess=main
+# WatchdogSec must be larger than ITERATION_TIMEOUT + CHECK_INTERVAL so a
+# slow-but-healthy iteration doesn't trip it. Default config:
+# ITERATION_TIMEOUT=180, CHECK_INTERVAL=60..120 → 300s (5 min) is safe.
+WatchdogSec=300
 User=monitor
 WorkingDirectory=/home/monitor/TGMASAGBOT
 ExecStart=/usr/bin/python3 -m src

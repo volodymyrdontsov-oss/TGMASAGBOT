@@ -20,6 +20,15 @@ TELEGRAM_API_HASH: str = _require("TELEGRAM_API_HASH")
 SPECIALIST_NAME: str = _require("SPECIALIST_NAME")
 
 CHECK_INTERVAL: int = int(os.getenv("CHECK_INTERVAL", "60"))
+
+# Hard cap on how long a single slot-check iteration may run before we abort
+# it. This is the safety net for hung Telethon network calls (see
+# https://github.com/LonamiWebs/Telethon/issues/... — `client.get_messages`
+# can occasionally block forever on a stalled connection, which would
+# otherwise wedge the monitor loop until the process is restarted).
+# Default: 180s (longer than the natural ~90s flow but much shorter than
+# "forever"). Override with ITERATION_TIMEOUT env var if your flow is slower.
+ITERATION_TIMEOUT: int = int(os.getenv("ITERATION_TIMEOUT", "180"))
 MASSAGE_BOT_USERNAME: str = os.getenv("MASSAGE_BOT_USERNAME", "GenesisMassagesBot")
 SESSION_NAME: str = os.getenv("SESSION_NAME", "massage_monitor_session")
 
