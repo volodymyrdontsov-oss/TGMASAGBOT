@@ -1,10 +1,12 @@
 """Send notifications when slots are found.
 
-Two strategies:
-  1. (default) Send a message to your own Saved Messages via the same userbot
-     session – zero extra setup.
-  2. (optional) Use a separate Telegram Bot API token to push to a specific
-     chat/channel.  Set NOTIFY_BOT_TOKEN and NOTIFY_CHAT_ID.
+Two strategies, mutually exclusive:
+  1. (default) Send a message to your own Saved Messages via the same
+     userbot session – zero extra setup.
+  2. Use a separate Telegram Bot API token to push to a specific chat /
+     channel. Set NOTIFY_BOT_TOKEN and NOTIFY_CHAT_ID. When this is
+     configured it *replaces* Saved Messages — Saved Messages is only
+     used as a fallback if the Bot API request fails.
 """
 
 from __future__ import annotations
@@ -68,10 +70,22 @@ def notify_via_bot_api(slots: list[SlotInfo]) -> None:
 
 
 async def send_notification(client: TelegramClient, slots: list[SlotInfo]) -> None:
-    await notify_via_saved_messages(client, slots)
+    """Deliver the slot-found alert via exactly one channel.
 
+    If the user has configured a separate notification bot
+    (NOTIFY_BOT_TOKEN + NOTIFY_CHAT_ID), use that — that's the whole
+    point of setting it up. Saved Messages is only used when no bot is
+    configured, or as a fallback when the Bot API call fails (e.g. token
+    revoked, bot blocked, network error) so the alert isn't silently
+    lost.
+    """
     if NOTIFY_BOT_TOKEN and NOTIFY_CHAT_ID:
         try:
             notify_via_bot_api(slots)
+            return
         except Exception:
-            log.exception("Failed to send notification via Bot API")
+            log.exception(
+                "Bot API delivery failed; falling back to Saved Messages",
+            )
+
+    await notify_via_saved_messages(client, slots)
