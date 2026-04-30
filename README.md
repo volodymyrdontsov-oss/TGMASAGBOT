@@ -547,15 +547,19 @@ systemctl restart massage-monitor
 
 ## Notification Options
 
+The bot uses **one** of two delivery channels — whichever is configured.
+If both are set, the separate bot wins; Saved Messages is only used as
+an automatic fallback when Bot API delivery fails.
+
 ### Saved Messages (Default)
 
 No setup needed. Notifications appear in your Telegram "Saved Messages" chat.
 
 **How to find Saved Messages:** Open Telegram, tap the search icon, and type "Saved Messages".
 
-### Separate Notification Bot (Optional)
+### Separate Notification Bot (Optional, replaces Saved Messages)
 
-If you want push notifications from a separate bot (useful if the monitor uses a different Telegram account):
+If you want push notifications from a separate bot (useful if the monitor uses a different Telegram account, or you don't want booking alerts cluttering Saved Messages):
 
 1. Open Telegram and search for **@BotFather**
 2. Send `/newbot` and follow the prompts to create a bot (any name)
